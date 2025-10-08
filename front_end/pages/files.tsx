@@ -1,14 +1,18 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/router';
-import Layout from '../components/Layout';
+import Layout from '../Components/Layout';
 import { useAuth } from '../contexts/AuthContext';
 import { useSecureFiles } from '../hooks/useSecureFiles';
 
 export default function Files() {
   const { user, loading: authLoading } = useAuth();
-  const { files, loading, uploadFile, deleteFile } = useSecureFiles();
+  const { files, loading, error, uploadFile, deleteFile, refetch } = useSecureFiles();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [password, setPassword] = useState('');
+  const [expiresAt, setExpiresAt] = useState<string>('');
+  const [maxDownloads, setMaxDownloads] = useState<number | ''>('');
+  const [watermarkEnabled, setWatermarkEnabled] = useState(true);
   const router = useRouter();
 
   React.useEffect(() => {
@@ -27,7 +31,12 @@ export default function Files() {
     if (!selectedFile) return;
 
     setUploading(true);
-    await uploadFile(selectedFile);
+    await uploadFile(selectedFile, {
+      password,
+      expiresAt: expiresAt || undefined,
+      maxDownloads: typeof maxDownloads === 'number' ? maxDownloads : undefined,
+      watermarkEnabled,
+    });
     setSelectedFile(null);
     setUploading(false);
   };
@@ -60,20 +69,53 @@ export default function Files() {
               {selectedFile ? selectedFile.name : 'Choose a file'}
             </label>
           </div>
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="text-input"
+          />
+          <input
+            type="datetime-local"
+            value={expiresAt}
+            onChange={(e) => setExpiresAt(e.target.value)}
+            className="text-input"
+          />
+          <input
+            type="number"
+            placeholder="Max downloads (optional)"
+            value={maxDownloads}
+            onChange={(e) => setMaxDownloads(e.target.value === '' ? '' : Number(e.target.value))}
+            className="text-input"
+            min={1}
+          />
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={watermarkEnabled}
+              onChange={(e) => setWatermarkEnabled(e.target.checked)}
+            />
+            <span>Watermark (images)</span>
+          </label>
           <button
             onClick={handleUpload}
-            disabled={!selectedFile || uploading}
+            disabled={!selectedFile || uploading || !password}
             className="upload-btn"
           >
             {uploading ? 'Uploading...' : 'Upload File'}
           </button>
         </div>
 
+        {error && (
+          <div style={{ color: '#ef4444', marginBottom: 12 }}>{error}</div>
+        )}
         {loading ? (
           <div>Loading files...</div>
         ) : files.length === 0 ? (
           <div className="empty-state">
             <p>No secure files yet. Upload one to get started!</p>
+            <button onClick={() => refetch()} className="upload-btn" style={{ marginTop: 12 }}>Refresh</button>
           </div>
         ) : (
           <div className="files-grid">
@@ -96,17 +138,35 @@ export default function Files() {
                     {file.max_downloads && (
                       <span> / {file.max_downloads}</span>
                     )}
+                    {file.expires_at && (
+                      <span style={{ marginLeft: 12 }}>Expires: {new Date(file.expires_at).toLocaleString()}</span>
+                    )}
                   </div>
                   <div className="file-footer">
                     <span className="created">
                       {new Date(file.created_at).toLocaleDateString()}
                     </span>
+                    <div className="actions">
+                      <a href={`/f/${file.id}`} target="_blank" rel="noreferrer" className="link-btn" style={{ background: '#3b82f6' }}>
+                        Open
+                      </a>
+                      <button
+                        onClick={() => {
+                          const url = `${window.location.origin}/f/${file.id}`;
+                          navigator.clipboard.writeText(url);
+                          alert('Share link copied to clipboard');
+                        }}
+                        className="link-btn"
+                      >
+                        Copy Link
+                      </button>
                     <button
                       onClick={() => deleteFile(file.id)}
                       className="delete-btn"
                     >
                       Delete
                     </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -157,6 +217,18 @@ export default function Files() {
         .file-label:hover {
           border-color: #2563eb;
           color: #2563eb;
+        }
+        .text-input {
+          padding: 10px 12px;
+          border: 1px solid #cbd5e1;
+          border-radius: 8px;
+          min-width: 200px;
+        }
+        .checkbox {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: #334155;
         }
         .upload-btn {
           background: #2563eb;
@@ -242,6 +314,17 @@ export default function Files() {
           align-items: center;
           padding-top: 12px;
           border-top: 1px solid #e2e8f0;
+        }
+        .actions { display: flex; gap: 8px; align-items: center; }
+        .link-btn {
+          background: #10b981;
+          color: white;
+          border: none;
+          padding: 8px 12px;
+          border-radius: 6px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
         }
         .created {
           color: #64748b;

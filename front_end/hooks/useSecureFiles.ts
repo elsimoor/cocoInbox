@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { encryptFile } from '../lib/crypto';
+import { watermarkImage } from '../lib/watermark';
 
 // Base URL for the backend API
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
@@ -9,6 +11,7 @@ interface SecureFile {
   user_id: string;
   filename: string;
   encrypted_file_url: string;
+  storage_path: string;
   file_size: number;
   password_protected: boolean;
   expires_at?: string;
@@ -16,6 +19,11 @@ interface SecureFile {
   max_downloads?: number;
   watermark_enabled: boolean;
   created_at: string;
+  iv?: string;
+  salt?: string;
+  algo?: string;
+  kdf_iterations?: number;
+  original_mime_type?: string;
 }
 
 export const useSecureFiles = () => {
@@ -50,19 +58,75 @@ export const useSecureFiles = () => {
 
   const uploadFile = async (
     file: File,
-    password?: string,
-    expiresAt?: string,
-    maxDownloads?: number
+    options?: {
+      password: string;
+      expiresAt?: string;
+      maxDownloads?: number;
+      watermarkEnabled?: boolean;
+    }
   ) => {
     if (!user) return null;
-    // For the MVP we assume the file is already encrypted and uploaded elsewhere.
-    // The backend expects an encryptedFileUrl pointing to a stored file. Here we
-    // cannot directly upload files without a storage service. You may implement
-    // file upload to S3 or another storage provider and then pass the resulting
-    // URL to the backend. For now, this function is a stub that reports an
-    // error.
-    setError('File upload is not implemented in this version.');
-    return null;
+    try {
+      const password = options?.password;
+      if (!password) {
+        throw new Error('Password is required for secure upload');
+      }
+
+      // 1) Optional watermark for images
+      let content: Blob = file;
+      let filename = file.name;
+      if ((options?.watermarkEnabled ?? true) && file.type.startsWith('image/')) {
+        const wmText = `Secure • ${user.email || user.id}`;
+        content = await watermarkImage(file, wmText);
+        // Use PNG extension for watermarked output
+        filename = filename.replace(/\.[^.]+$/, '') + '.png';
+      }
+
+      // 2) Request signed upload URL
+      const upRes = await fetch(`${API_BASE_URL}/api/files/upload-url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, filename, contentType: 'application/octet-stream' }),
+      });
+      if (!upRes.ok) throw new Error('Failed to get upload URL');
+      const { storagePath, uploadUrl } = await upRes.json();
+
+      // 3) Encrypt on client
+      const enc = await encryptFile(content, password);
+
+      // 4) Upload encrypted blob
+      const put = await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: enc.blob });
+      if (!put.ok) throw new Error('Failed to upload encrypted file');
+
+      // 5) Create DB record
+      const crRes = await fetch(`${API_BASE_URL}/api/files/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          filename,
+          storagePath,
+          fileSize: enc.blob.size,
+          passwordProtected: true,
+          password,
+          expiresAt: options?.expiresAt,
+          maxDownloads: options?.maxDownloads,
+          watermarkEnabled: options?.watermarkEnabled ?? file.type.startsWith('image/'),
+          iv: enc.iv,
+          salt: enc.salt,
+          algo: enc.algo,
+          kdfIterations: enc.kdfIterations,
+          originalMimeType: file.type || 'application/octet-stream',
+        }),
+      });
+      if (!crRes.ok) throw new Error('Failed to create file record');
+      const data = await crRes.json();
+      await fetchFiles();
+      return data as SecureFile;
+    } catch (err: any) {
+      setError(err.message);
+      return null;
+    }
   };
 
   const deleteFile = async (fileId: string) => {

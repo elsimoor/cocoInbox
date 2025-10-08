@@ -1,14 +1,16 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import Layout from '../components/Layout';
+import Layout from '../Components/Layout';
 import { useAuth } from '../contexts/AuthContext';
 import { useEphemeralEmails } from '../hooks/useEphemeralEmails';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
 export default function Emails() {
   const { user, loading: authLoading } = useAuth();
   const { emails, loading, error, createEmail, deactivateEmail } = useEphemeralEmails();
   const [aliasName, setAliasName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [mailchimpConfigured, setMailchimpConfigured] = useState<boolean | null>(null);
   const router = useRouter();
 
   React.useEffect(() => {
@@ -16,6 +18,22 @@ export default function Emails() {
       router.push('/login');
     }
   }, [user, authLoading, router]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/config/public`);
+        if (res.ok) {
+          const data = await res.json();
+          setMailchimpConfigured(!!data.mailchimpConfigured);
+        } else {
+          setMailchimpConfigured(null);
+        }
+      } catch {
+        setMailchimpConfigured(null);
+      }
+    })();
+  }, []);
 
   const handleCreate = async () => {
     setCreating(true);
@@ -36,6 +54,11 @@ export default function Emails() {
         {error && (
           <div className="error-banner">
             {error}
+          </div>
+        )}
+        {mailchimpConfigured === false && (
+          <div className="warning-banner">
+            Mailchimp API is not configured. To enable premium email features (e.g., transactional sending), set MAILCHIMP_API_KEY and MAILCHIMP_SERVER_PREFIX in the backend environment.
           </div>
         )}
 
@@ -101,6 +124,13 @@ export default function Emails() {
         .error-banner {
           background: #fee2e2;
           color: #b91c1c;
+          padding: 12px 16px;
+          border-radius: 8px;
+          margin-bottom: 16px;
+        }
+        .warning-banner {
+          background: #fff7ed;
+          color: #9a3412;
           padding: 12px 16px;
           border-radius: 8px;
           margin-bottom: 16px;

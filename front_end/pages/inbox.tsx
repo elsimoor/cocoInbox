@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import Layout from '../components/Layout';
+import Layout from '../Components/Layout';
 import { useAuth } from '../contexts/AuthContext';
 // We no longer fetch per‑user temporary addresses for the inbox view. Instead,
 // the inbox displays messages from a single configured mailbox defined by

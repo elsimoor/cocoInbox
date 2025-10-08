@@ -1,11 +1,13 @@
 import React, { useEffect } from 'react';
 import { useRouter } from 'next/router';
-import Layout from '../components/Layout';
+import Layout from '../Components/Layout';
 import { useAuth } from '../contexts/AuthContext';
+import { useStats } from '../hooks/useStats';
 
 export default function Dashboard() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const { stats, loading: statsLoading } = useStats();
 
   useEffect(() => {
     if (!loading && !user) {
@@ -28,7 +30,7 @@ export default function Dashboard() {
             <div className="stat-icon">📧</div>
             <div className="stat-content">
               <h3>Ephemeral Emails</h3>
-              <p className="stat-number">0</p>
+              <p className="stat-number">{statsLoading ? '...' : (stats?.ephemeralEmails.activeCount ?? 0)}</p>
               <p className="stat-label">Active addresses</p>
             </div>
           </div>
@@ -37,7 +39,7 @@ export default function Dashboard() {
             <div className="stat-icon">📝</div>
             <div className="stat-content">
               <h3>Secure Notes</h3>
-              <p className="stat-number">0</p>
+              <p className="stat-number">{statsLoading ? '...' : (stats?.secureNotes.activeCount ?? 0)}</p>
               <p className="stat-label">Encrypted notes</p>
             </div>
           </div>
@@ -46,7 +48,7 @@ export default function Dashboard() {
             <div className="stat-icon">📁</div>
             <div className="stat-content">
               <h3>Secure Files</h3>
-              <p className="stat-number">0</p>
+              <p className="stat-number">{statsLoading ? '...' : (stats?.secureFiles.activeCount ?? 0)}</p>
               <p className="stat-label">Protected files</p>
             </div>
           </div>
@@ -63,6 +65,9 @@ export default function Dashboard() {
             </button>
             <button className="action-btn" onClick={() => router.push('/files')}>
               Upload Secure File
+            </button>
+            <button className="action-btn" onClick={() => router.push('/sms')}>
+              Get Temp Number
             </button>
           </div>
         </div>
